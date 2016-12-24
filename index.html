@@ -1,0 +1,131 @@
+<html lang="en">
+    <head>
+        <title>Pure Data and Emscripten Demo</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+        <style>
+            body {
+                color: #61443e;
+                font-family: Monospace;
+                font-size: 13px;
+                background-color: #bfd1e5;
+                margin: 0px;
+                overflow: hidden;
+            }
+            #info {
+                position: absolute;
+                top: 0px; width: 100%;
+                padding: 5px;
+            }
+            #loading-status {
+                margin: 12px;
+            }
+            a {
+                color: #a06851;
+            }
+            button {
+                font-family: monospace;
+            }
+            #play-pause {
+                margin-left: 12px;
+            }
+        </style>
+        <body>
+            <div id="loading-status">Loading...</div>
+            <button disabled id="play-pause">Toggle Playback</button>
+            <button disabled id="oscillators">Oscillators</button>
+
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+            <script src="dst/module.js"></script>
+            <script>
+                var zg = {
+                    context_new: Module.cwrap('zg_context_new', 'number', ['number', 'number', 'number', 'number', 'number']),
+                    context_new_graph_from_file: Module.cwrap('zg_context_new_graph_from_file', 'number', ['number', 'string', 'string']),
+                    graph_attach: Module.cwrap('zg_graph_attach', null, ['number']),
+                    context_process: Module.cwrap('zg_context_process', null, ['number', 'number', 'number']),
+                    context_delete: Module.cwrap('zg_context_delete', null, ['number']),
+                    context_send_messageV0: Module.cwrap('zg_context_send_messageV', null, ['number', 'string', 'number', 'string']),
+                    context_send_messageV1: Module.cwrap('zg_context_send_messageV', null, ['number', 'string', 'number', 'string', 'number'])
+                }
+
+                $('#loading-status').text('Loading... done.')
+
+                var AudioContext = window.AudioContext || window.webkitAudioContext
+                if (AudioContext == null) {
+                    console.error('Web Audio not supported.')
+                }
+                var audioContext = new AudioContext()
+
+                $.get('pd/demo.pd', function (data) {
+                    var playPause = $('#play-pause')
+                    var playing = true
+                    var connected = true
+                    var pauseTimeout = 0
+
+                    playPause.prop('disabled', false)
+                    playPause.click(function () {
+                        if (playing) {
+                            pauseTimeout = setTimeout(function () {
+                                // Fade out takes 200 ms
+                                scriptProcessor.disconnect(audioContext.destination)
+                                connected = false
+                            }, 250)
+
+                            playing = false
+                            zg.context_send_messageV0(zgContext, "fadeOut", 0.0, "b")
+                        } else {
+                            clearTimeout(pauseTimeout)
+                            playing = true
+                            zg.context_send_messageV0(zgContext, "fadeIn", 0.0, "b")
+
+                            if (!connected) {
+                                scriptProcessor.connect(audioContext.destination)
+                                connected = true
+                            }
+                        }
+                    })
+
+                    var oscillators = $('#oscillators')
+
+                    oscillators.prop('disabled', false)
+                    oscillators.click(function () {
+                        zg.context_send_messageV0(zgContext, "changeOsc", 0.0, "b")
+                    })
+
+                    FS.mkdir('pd')
+                    FS.writeFile('pd/demo.pd', data)
+
+                    var scriptProcessor = audioContext.createScriptProcessor(1024, 0, 2)
+                    var blockSize = scriptProcessor.bufferSize
+
+                    var bufferSize = blockSize * 2 * 4
+                    var scriptOutputPtr = Module._malloc(bufferSize)
+                    var scriptOutputBuffer = Module.HEAPU8.subarray(scriptOutputPtr, scriptOutputPtr + bufferSize)
+                    var outputBufferChannel1 = new Float32Array(scriptOutputBuffer.buffer, scriptOutputBuffer.byteOffset, blockSize)
+                    var outputBufferChannel2 = new Float32Array(scriptOutputBuffer.buffer, scriptOutputBuffer.byteOffset + blockSize * 4, blockSize)
+
+                    var zgContext = zg.context_new(0, 2, blockSize, audioContext.sampleRate, null, null)
+                    var zgGraph = zg.context_new_graph_from_file(zgContext, 'pd/', 'demo.pd')
+
+                    if (zgGraph === 0) {
+                        console.error('Error loading graph.')
+                        return
+                    }
+
+                    zg.graph_attach(zgGraph)
+
+                    scriptProcessor.onaudioprocess = function (audioProcessingEvent) {
+                        zg.context_process(zgContext, 0, scriptOutputPtr)
+
+                        var outputBuffer = audioProcessingEvent.outputBuffer
+
+                        outputBuffer.copyToChannel(outputBufferChannel1, 0)
+                        outputBuffer.copyToChannel(outputBufferChannel2, 1)
+                    }
+
+                    scriptProcessor.connect(audioContext.destination)
+                })
+            </script>
+        </body>
+    </head>
+</html>
