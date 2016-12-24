@@ -29,11 +29,19 @@
             #play-pause {
                 margin-left: 12px;
             }
+            #patch-image {
+                display: block;
+                margin: 12px;
+                position: relative;
+                width: 90%;
+                max-width: 600px;
+            }
         </style>
         <body>
             <div id="loading-status">Loading...</div>
             <button disabled id="play-pause">Toggle Playback</button>
-            <button disabled id="oscillators">Oscillators</button>
+            <button disabled id="oscillators">Send "changeOsc"</button>
+            <img id="patch-image" width="500" src="img/patch.JPG"></img>
 
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
             <script src="dst/module.js"></script>
