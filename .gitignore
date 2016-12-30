@@ -7,3 +7,4 @@ npm-debug.log
 dst/*js
 dst/*map
 dst/*mem
+.browse.VC.db
