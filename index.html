@@ -103,7 +103,7 @@
                     FS.mkdir('pd')
                     FS.writeFile('pd/demo.pd', data)
 
-                    var scriptProcessor = audioContext.createScriptProcessor(1024, 0, 2)
+                    var scriptProcessor = audioContext.createScriptProcessor(null, 0, 2)
                     var blockSize = scriptProcessor.bufferSize
 
                     var bufferSize = blockSize * 2 * 4
