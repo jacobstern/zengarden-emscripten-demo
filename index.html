@@ -39,9 +39,9 @@
         </style>
         <body>
             <div id="loading-status">Loading...</div>
-            <button disabled id="play-pause">Toggle Playback</button>
+            <button disabled id="play-pause">Start</button>
             <button disabled id="oscillators">Send "changeOsc"</button>
-            <img id="patch-image" width="500" src="img/patch.JPG"></img>
+            <img id="patch-image" width="500" src="img/patch.JPG" />
 
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
             <script src="dst/module.js"></script>
@@ -62,48 +62,20 @@
                 if (AudioContext == null) {
                     console.error('Web Audio not supported.')
                 }
-                var audioContext = new AudioContext()
 
-                $.get('pd/demo.pd', function (data) {
-                    var playPause = $('#play-pause')
-                    var playing = true
-                    var connected = true
-                    var pauseTimeout = 0
+                var audioInitialized = false
+                var audioContext = null
+                var scriptProcessor = null
+                var zgContext = null
 
-                    playPause.prop('disabled', false)
-                    playPause.click(function () {
-                        if (playing) {
-                            pauseTimeout = setTimeout(function () {
-                                // Fade out takes 200 ms
-                                scriptProcessor.disconnect(audioContext.destination)
-                                connected = false
-                            }, 250)
+                function lazyInitAudio() {
+                    if (audioInitialized) {
+                        return 
+                    }
 
-                            playing = false
-                            zg.context_send_messageV0(zgContext, "fadeOut", 0.0, "b")
-                        } else {
-                            clearTimeout(pauseTimeout)
-                            playing = true
-                            zg.context_send_messageV0(zgContext, "fadeIn", 0.0, "b")
+                    audioContext = new AudioContext()
+                    scriptProcessor = audioContext.createScriptProcessor(null, 0, 2)
 
-                            if (!connected) {
-                                scriptProcessor.connect(audioContext.destination)
-                                connected = true
-                            }
-                        }
-                    })
-
-                    var oscillators = $('#oscillators')
-
-                    oscillators.prop('disabled', false)
-                    oscillators.click(function () {
-                        zg.context_send_messageV0(zgContext, "changeOsc", 0.0, "b")
-                    })
-
-                    FS.mkdir('pd')
-                    FS.writeFile('pd/demo.pd', data)
-
-                    var scriptProcessor = audioContext.createScriptProcessor(null, 0, 2)
                     var blockSize = scriptProcessor.bufferSize
 
                     var bufferSize = blockSize * 2 * 4
@@ -112,8 +84,15 @@
                     var outputBufferChannel1 = new Float32Array(scriptOutputBuffer.buffer, scriptOutputBuffer.byteOffset, blockSize)
                     var outputBufferChannel2 = new Float32Array(scriptOutputBuffer.buffer, scriptOutputBuffer.byteOffset + blockSize * 4, blockSize)
 
-                    var zgContext = zg.context_new(0, 2, blockSize, audioContext.sampleRate, null, null)
+                    zgContext = zg.context_new(0, 2, blockSize, audioContext.sampleRate, null, null)
                     var zgGraph = zg.context_new_graph_from_file(zgContext, 'pd/', 'demo.pd')
+
+                    var oscillators = $('#oscillators')
+
+                    oscillators.prop('disabled', false)
+                    oscillators.click(function () {
+                        zg.context_send_messageV0(zgContext, "changeOsc", 0.0, "b")
+                    })
 
                     if (zgGraph === 0) {
                         console.error('Error loading graph.')
@@ -131,7 +110,42 @@
                         outputBuffer.copyToChannel(outputBufferChannel2, 1)
                     }
 
-                    scriptProcessor.connect(audioContext.destination)
+                    var gainNode = audioContext.createGain()
+                    gainNode.gain.value = 0
+                    scriptProcessor.connect(gainNode)
+                    gainNode.connect(audioContext.destination)
+
+                    // Workaround for click on first playback
+                    setTimeout(function () {
+                        gainNode.gain.value = 0.95
+                    }, 50);
+                
+                    audioInitialized = true
+                }
+
+                $.get('pd/demo.pd', function (data) {
+                    var playPause = $('#play-pause')
+                    var playing = false
+                    var pauseTimeout = 0
+
+                    playPause.prop('disabled', false)
+                    playPause.click(function () {
+                        lazyInitAudio()
+
+                        if (playing) {
+                            playing = false
+                            zg.context_send_messageV0(zgContext, "fadeOut", 0.0, "b")
+                            playPause.text('Send "fadeIn"')
+                        } else {
+                            clearTimeout(pauseTimeout)
+                            playing = true
+                            zg.context_send_messageV0(zgContext, "fadeIn", 0.0, "b")
+                            playPause.text('Send "fadeOut"')
+                        }
+                    })
+
+                    FS.mkdir('pd')
+                    FS.writeFile('pd/demo.pd', data)
                 })
             </script>
         </body>
